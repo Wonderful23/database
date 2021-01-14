@@ -44,6 +44,7 @@ class BorrowHepler{
         int type;// 0:借不到，1:向左边借，2:向右边借
         Node* borrower; // 被借的结点
         Node* borrowConcat;// 被借出的结点的内容
+        int beforeValue; // 供调整数值关系使用
         bool flag; // 是否能够成功借
     public:
         int getType(){
@@ -70,6 +71,12 @@ class BorrowHepler{
         void setBorrowConcat(Node* node){
             this->borrowConcat = node;
         }
+        int getBeforeValue(){
+            return this->beforeValue;
+        }
+        void setBeforeValue(int beforeValue){
+            this->beforeValue = beforeValue;
+        }
         BorrowHepler(int type,Node* borrower,Node* borrowConcat,bool flag){
             this->type = type;
             this->borrower = borrower;
@@ -89,11 +96,17 @@ class Node{
         vector<INT_TO_Node*> getNodes(){
             return this->nodes;
         }
+        void setNodes(vector<INT_TO_Node*> nodes){
+            this->nodes = nodes;
+        }
         Node* getParent(){
             return this->parent;
         }
         int getMaxValue(){
             return this->maxValue;
+        }
+        Type getType(){
+            return this->type;
         }
         Node(int m,vector<INT_TO_Node*>nodes,Type type,int maxValue,Node* parent){
             this->m = m;
@@ -123,6 +136,11 @@ class Node{
                 }
             }
         }
+        // 删除过程中添加结点
+        void addNode(Node* node){
+            this->nodes.push_back(new INT_TO_Node(node->getMaxValue(),node));
+            this->reorganize();
+        }
         // 寻找这个结点左右兄弟
         /*
          * 分情况讨论，
@@ -136,33 +154,104 @@ class Node{
             int index = this->parent->findValue(this->maxValue);
             vector<BorrowHepler*> result;
             if(index == 0){
-                BorrowHepler* borrowHelper = new BorrowHepler(2,this->parent->getNodes()[1],NULL,false);
+                BorrowHepler* borrowHelper = new BorrowHepler(2,this->parent->getNodes()[1]->getNode(),NULL,false);
                 result.push_back(borrowHelper);
                 return result;
             }
             else if(index == this->parent->getNodes().size()-1){
-                BorrowHepler* borrowHelper = new BorrowHepler(1,this->parent->getNodes()[index-1],NULL,false);
+                BorrowHepler* borrowHelper = new BorrowHepler(1,this->parent->getNodes()[index-1]->getNode(),NULL,false);
                 result.push_back(borrowHelper);
                 return result; 
             }
             else{
-                result.push_back(new BorrowHepler(1,this->parent->getNodes()[index-1],NULL,false));
-                result.push_back(new BorrowHepler(2,this->parent->getNodes()[index+1],NULL,false));
+                result.push_back(new BorrowHepler(1,this->parent->getNodes()[index-1]->getNode(),NULL,false));
+                result.push_back(new BorrowHepler(2,this->parent->getNodes()[index+1]->getNode(),NULL,false));
                 return result;
             }
         }
+        /*
+         * 合并两兄弟结点
+         * 
+         * 
+        */
+        int mergeNode(){
+            vector<BorrowHepler*> possibleSibling = this->parent->findSibling();
+            for(int i=0;i<possibleSibling.size();i++){
+                Node* mergeNode = possibleSibling[i]->getBorrower();
+                /*
+                 * 左边的结点进行合并
+                 * 直接将左边结点的所有值移到这个结点中
+                 * 
+                 *
+                */
+                int result = 0;
+                if(possibleSibling[i]->getType() == 1){
+                    result = mergeNode->getMaxValue();
+                    vector<INT_TO_Node*> tempNodes = mergeNode->getNodes();
+                    for(int j=0;j<tempNodes.size();j++)
+                        this->nodes.push_back(tempNodes[j]);
+                    this->reorganize();
+                    return result;
+                }
+                /*
+                 * 右边的结点进行合并
+                 * 直接将右边的结点的值全部移动到这个结点中
+                 * 然后更新一下
+                 * 
+                */
+                else{
+                    result = this->maxValue;
+                    vector<INT_TO_Node*> newNodes = this->nodes;
+                    vector<INT_TO_Node*> tempNodes = mergeNode->getNodes();
+                     for(int j=0;j<tempNodes.size();j++)
+                        newNodes.push_back(tempNodes[j]);
+                    mergeNode->setNodes(newNodes);
+                    mergeNode->reorganize();
+                    return result;
+                }
+            }
+        }
+        /*
+         * 处理所有可能借的兄弟结点
+         * 步骤一: 该兄弟要是满足数量关系意味着可以借，否则就检查下一个
+         * 步骤二: 在满足数值关系的基础上,若这个是左兄弟，则取最大值,删除兄弟的结点的位置，添加到适当的位置
+         * 步骤三: 在满足数值关系的基础上，若这个是右兄弟，则取最小值
+         * 步骤四: 若借不到就返回NULL
+         * 
+        */
         BorrowHepler* borrowFromSibling(){
-            vector<BorrowHelper*> possibleSibling  = this->findSibling();
-            BorrowHelper* result = NULL;
+            vector<BorrowHepler*> possibleSibling  = this->findSibling();
+            BorrowHepler* result = NULL;
             for(int i=0;i<possibleSibling.size();i++){
                 Node* targetNode = possibleSibling[i]->getBorrower();
                 if(targetNode->getNodes().size()>=ceil(this->m/2)+1){
                     if(possibleSibling[i]->getType() == 1){
-
+                        Node* borrowConcat = possibleSibling[i]->getBorrower()->getNodes()[possibleSibling[i]->getBorrower()->getNodes().size()-1]->getNode();
+                        // 调整兄弟的数值关系
+                        int beforeValue = possibleSibling[i]->getBorrower()->deleteValue(borrowConcat->getMaxValue());
+                        this->addNode(borrowConcat);
+                        possibleSibling[i]->setBorrowConcat(borrowConcat);
+                        possibleSibling[i]->setFlag(true);
+                        possibleSibling[i]->setBeforeValue(beforeValue);
+                        result = possibleSibling[i];
+                        return result;
                     }
-                    else if(possibleSibling)
+                    else if(possibleSibling[i]->getType() == 2){
+                        Node* borrowConcat = possibleSibling[i]->getBorrower()->getNodes()[0]->getNode();
+                        possibleSibling[i]->getBorrower()->deleteValue(borrowConcat->getMaxValue());
+                        // 调整原来结点的数值关系
+                        int beforeValue = borrowConcat->getMaxValue();
+                        this->addNode(borrowConcat);
+                        possibleSibling[i]->setBorrowConcat(borrowConcat);
+                        possibleSibling[i]->setFlag(true);
+                        possibleSibling[i]->setBeforeValue(beforeValue);
+                        result = possibleSibling[i];
+
+                        return result;
+                    }
                 }
             }
+            return result;
         }
         /*
          * 将超过m的结点一分为二，前(M+1)/2,后M-(M+1)/2
@@ -262,6 +351,7 @@ class Node{
             
             int result = this->maxValue;
             int index = this->findValue(value);
+            delete this->nodes[index]->getNode();
             this->nodes.erase(this->nodes.begin()+index);
             this->reorganize();
             return result;
@@ -432,14 +522,21 @@ class BPlusTree{
          * 以下为递归操作
          * 步骤一(数值关系调整): 删除掉该值，判断删除的值是不是最大的，如果是的话，先沿着parent链向上进行更新(数值关系)
          * 步骤二(情况一 递归结束的条件一): 判断删除的结点的位置是不是满足数量关系，如果满足递归结束
-         * 步骤三(情况二): 不满足的情况下，从兄弟结点借，能借的话，最左边的往右边借，其他向左边借，借结点就转成删除兄弟某结点的操作，以此来实现递归
+         * 步骤三(情况二 递归结束的条件二): 不满足的情况下，从兄弟结点借，能借的话，最左边的往右边借，其他向左边借，借结点就转成删除兄弟某结点的操作，以此来实现递归
          * 步骤四(情况三): 如果兄弟处借不到，需要将这两个兄弟结点进行合并，转成对父亲结点的删除操作
          * 步骤五(情况四 递归结束的条件二): 递归操作不断回溯到根结点，如果根结点不满足条件就删除根结点，完成操作。
         */
         bool deleteValueKeyStep(int value,Node* targetNode){
             
-            if(targetNode == NULL){
-                return true;
+            if(targetNode->getType() == Type::ROOT){
+                int before = targetNode->deleteValue(value);
+                if(targetNode->isValid(this->total)) 
+                    return true;
+                else{
+                    this->root = targetNode->getNodes()[0]->getNode();
+                    delete targetNode;
+                    return true;
+                }
             }
             else{
                 int before = targetNode->deleteValue(value);
@@ -448,7 +545,43 @@ class BPlusTree{
                 if(targetNode->isValid(this->total)) 
                     return true;
                 else{
-
+                    BorrowHepler* borrowHepler = targetNode->borrowFromSibling();
+                    
+                    // 情况二
+                    if(borrowHepler != NULL){
+                        
+                        /*
+                         * 从左兄弟借的
+                         * 数值关系是要调整左兄弟的
+                         * 
+                        
+                        */
+                        if(borrowHepler->getType() == 1){
+                            this->preDelete(borrowHepler->getBorrower()->getMaxValue(),borrowHepler->getBeforeValue(),
+                                borrowHepler->getBorrowConcat()->getMaxValue(),borrowHepler->getBorrower());
+                            return true;
+                        }
+                        /*
+                         * 从右兄弟借的
+                         * 
+                         * 
+                         * 
+                        */
+                        else{
+                            this->preInsert(targetNode->getMaxValue(),borrowHepler->getBeforeValue(),targetNode);
+                            return true;
+                        }
+                    }
+                    // 情况三
+                    /*
+                     * 将兄弟结点进行合并
+                     * 
+                     * 
+                     */
+                    else{
+                        int deleteParentValue = targetNode->mergeNode();
+                        return this->deleteValueKeyStep(deleteParentValue,targetNode->getParent());
+                    }
                 }
             }
             
